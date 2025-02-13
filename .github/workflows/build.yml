@@ -1,0 +1,55 @@
+name: VyOS v1.4 Rolling Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      VERSION: # 1.4-rolling
+        required: true
+  # schedule:
+  #   - cron: 0 3 * * *
+
+env:
+  GIT_CLONE_URL: https://github.com/vyos/vyos-build
+  BRANCH: sagitta
+  ARCHITECTURE: amd64
+  BUILD_BY: pinheirolucas@pm.me
+  BUILD_TYPE: release
+  DEBIAN_MIRROR: http://ftp.us.debian.org/debian/
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: vyos/vyos-build:sagitta
+      options: --workdir /vyos --privileged
+
+    steps:
+      - name: Clone source code
+        run: git clone -b $BRANCH --single-branch $GIT_CLONE_URL
+
+      - name: Set timestamp if using rolling
+        run: echo "timestamp=_$(date +%Y%m%d%H%M)" >> GITHUB_ENV
+        if: contains(github.event.inputs.VERSION,'rolling')
+
+      - name: Build ISO
+        working-directory: ./vyos-build
+        run: |
+          sudo make clean
+          sudo ./build-vyos-image iso --architecture $ARCHITECTURE --build-by $BUILD_BY --build-type $BUILD_TYPE --version ${{ github.event.inputs.VERSION }}$timestamp
+
+      - name: Debug - check what we get
+        run: find ./vyos-build/build/ -iname "*.iso" -type f
+
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vyos-${{ github.event.inputs.VERSION }}${{ env.timestamp }}_${{ env.ARCHITECTURE }}
+          path: ./vyos-build/build/live-image-${{ env.ARCHITECTURE }}.hybrid.iso
+
+  delete_workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old workflow runs
+        uses: GitRML/delete-workflow-runs@main
+        with:
+          retain_days: 2
